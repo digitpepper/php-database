@@ -1,0 +1,11 @@
+{
+	"name": "digitpepper/php-database",
+	"description": "A php database",
+	"require": {
+		"php": ">=7.4"
+	},
+	"license": "MIT",
+	"autoload": {
+		"psr-4": {"DP\\": "src/"}
+	}
+}

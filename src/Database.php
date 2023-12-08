@@ -50,28 +50,17 @@ class Database
 
 	public static function construct(): void
 	{
-		if(self::$is_constructed){
+		if (self::$is_constructed) {
 			return;
 		}
 		$options = [
 			PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
 			PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
-			PDO::MYSQL_ATTR_INIT_COMMAND => 'SET NAMES utf8mb4',
+			PDO::MYSQL_ATTR_INIT_COMMAND => 'SET NAMES utf8mb4, SESSION sql_mode="ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION"',
 		];
-		if (\defined('\DB_SSL_CA')) {
-			$options[PDO::MYSQL_ATTR_SSL_CA] = \DB_SSL_CA;
+		if (\defined('\DB_OPTIONS')) {
+			$options = array_replace($options, \DB_OPTIONS);
 		}
-		if (\defined('\DB_PERSISTENT')) {
-			$options[PDO::ATTR_PERSISTENT] = \DB_PERSISTENT;
-		}
-		if (\defined('\DB_EMULATE_PREPARES')) {
-			$options[PDO::ATTR_EMULATE_PREPARES] = \DB_EMULATE_PREPARES;
-		}
-		$sql_mode = 'ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION';
-		if (\defined('\DB_SQL_MODE')) {
-			$sql_mode = \DB_SQL_MODE;
-		}
-		$options[PDO::MYSQL_ATTR_INIT_COMMAND] .= ', sql_mode="' . $sql_mode . '"';
 		self::$options = $options;
 		self::$host = \defined('\DB_HOST') ? \DB_HOST : null;
 		self::$unix_socket = \defined('\DB_UNIX_SOCKET') ? \DB_UNIX_SOCKET : null;
@@ -79,6 +68,7 @@ class Database
 		self::$user = \DB_USER;
 		self::$password = \DB_PASSWORD;
 		self::connect();
+		\register_shutdown_function([self::class, 'shutdown_function']);
 		self::$is_constructed = true;
 	}
 
@@ -108,31 +98,40 @@ class Database
 
 	/**
 	 * @param string $sql
-	 * @param array<string, string|int|null|bool> $data
+	 * @param array <string, string|int|null|bool> $data
+	 * @param array <string, int> $data_types
 	 * @return PDOStatement
 	 * @throws Exception
 	 */
-	public static function prepare_bind_execute(string $sql, array $data = []): PDOStatement
+	public static function prepare_bind_execute(string $sql, array $data = [], array $data_types = []): PDOStatement
 	{
 		self::construct();
 		$sth = self::$pdo->prepare($sql);
+		if (!$sth) {
+			$error_info = self::$pdo->errorInfo();
+			throw new Exception("SQLSTATE: ${error_info[0]}, error code: ${error_info[1]}, error string: ${error_info[2]}");
+		}
 		if ($data) {
 			foreach ($data as $key => $value) {
-				switch (\gettype($value)) {
-					case 'string':
-						$data_type = PDO::PARAM_STR;
-						break;
-					case 'integer':
-						$data_type = PDO::PARAM_INT;
-						break;
-					case 'NULL':
-						$data_type = PDO::PARAM_NULL;
-						break;
-					case 'boolean':
-						$data_type = PDO::PARAM_BOOL;
-						break;
-					default:
-						$data_type = PDO::PARAM_STR;
+				if (isset($data_types[$key])) {
+					$data_type = $data_types[$key];
+				} else {
+					switch (\gettype($value)) {
+						case 'string':
+							$data_type = PDO::PARAM_STR;
+							break;
+						case 'integer':
+							$data_type = PDO::PARAM_INT;
+							break;
+						case 'NULL':
+							$data_type = PDO::PARAM_NULL;
+							break;
+						case 'boolean':
+							$data_type = PDO::PARAM_BOOL;
+							break;
+						default:
+							$data_type = PDO::PARAM_STR;
+					}
 				}
 				if (!$sth->bindValue($key, $value, $data_type)) {
 					throw new Exception('PDO statement cannot bind value.');
@@ -143,6 +142,13 @@ class Database
 			throw new Exception('SQL statement cannot be executed.');
 		}
 		return $sth;
+	}
+
+	public static function shutdown_function(): void
+	{
+		if (self::$pdo->inTransaction()) {
+			self::roll_back();
+		}
 	}
 
 	protected static function connect(): void

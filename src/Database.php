@@ -146,7 +146,8 @@ class Database
 
 	public static function shutdown_function(): void
 	{
-		if (self::$pdo->inTransaction()) {
+		$pdo = self::$pdo;
+		if ($pdo && $pdo->inTransaction()) {
 			self::roll_back();
 		}
 	}

@@ -109,7 +109,7 @@ class Database
 		$sth = self::$pdo->prepare($sql);
 		if (!$sth) {
 			$error_info = self::$pdo->errorInfo();
-			throw new Exception("SQLSTATE: ${error_info[0]}, error code: ${error_info[1]}, error string: ${error_info[2]}");
+			throw new Exception("SQLSTATE: {$error_info[0]}, error code: {$error_info[1]}, error string: {$error_info[2]}");
 		}
 		if ($data) {
 			foreach ($data as $key => $value) {

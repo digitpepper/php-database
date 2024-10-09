@@ -6,6 +6,6 @@
 	},
 	"license": "MIT",
 	"autoload": {
-		"psr-4": {"DP\\": "src/"}
+		"classmap": ["src/"]
 	}
 }

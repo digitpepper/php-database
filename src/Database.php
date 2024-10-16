@@ -11,87 +11,77 @@ use Exception;
 class Database
 {
 	/**
-	 * @var bool
+	 * @var array <string, array{dsn: string, username: string, password: string, options?: array<int, mixed>}>
 	 */
-	public static $is_constructed = false;
-
-	/** @var PDO $pdo */
-	public static $pdo = null;
+	protected static $configs = [];
 
 	/**
-	 * @var array<int, int|string>
+	 * @var array <string, Database>
 	 */
-	protected static $options = [];
+	protected static $instances = [];
 
 	/**
-	 * @var string
+	 * @var PDO
 	 */
-	protected static $host = null;
+	public $pdo = null;
 
 	/**
-	 * @var string
+	 * @var array <int, mixed>
 	 */
-	protected static $unix_socket = null;
+	public static $default_options = [
+		PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+		PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
+		PDO::MYSQL_ATTR_INIT_COMMAND => 'SET SESSION sql_mode="ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION"',
+	];
 
 	/**
-	 * @var string
+	 * Database constructor.
+	 * @param array{dsn: string, username: string, password: string, options?: array<int, mixed>} $config
 	 */
-	protected static $name = null;
-
-	/**
-	 * @var string
-	 */
-	protected static $user = null;
-
-	/**
-	 * @var string
-	 */
-	protected static $password = null;
-
-	public static function construct(): void
+	protected function __construct(array $config)
 	{
-		if (self::$is_constructed) {
-			return;
+		$options = self::$default_options;
+		if (isset($config['options'])) {
+			$options = array_replace($options, $config['options']);
 		}
-		$options = [
-			PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-			PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
-			PDO::MYSQL_ATTR_INIT_COMMAND => 'SET NAMES utf8mb4, SESSION sql_mode="ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION"',
-		];
-		if (\defined('\DB_OPTIONS')) {
-			$options = array_replace($options, \DB_OPTIONS);
-		}
-		self::$options = $options;
-		self::$host = \defined('\DB_HOST') ? \DB_HOST : null;
-		self::$unix_socket = \defined('\DB_UNIX_SOCKET') ? \DB_UNIX_SOCKET : null;
-		self::$name = \DB_NAME;
-		self::$user = \DB_USER;
-		self::$password = \DB_PASSWORD;
-		self::connect();
-		\register_shutdown_function([self::class, 'shutdown_function']);
-		self::$is_constructed = true;
+		$this->pdo = new PDO($config['dsn'], $config['username'], $config['password'], $options);
+		\register_shutdown_function([$this, 'shutdown_function']);
 	}
 
-	public static function begin(): void
+	/**
+	 * @param array{dsn: string, username: string, password: string, options?: array<int, mixed>} $config
+	 * @param string $name
+	 */
+	public static function set_config(array $config, string $name = 'main'): void
 	{
-		self::construct();
-		if (!self::$pdo->beginTransaction()) {
+		self::$configs[$name] = $config;
+	}
+
+	public static function get_instance(string $name = 'main'): self
+	{
+		if (!isset(self::$instances[$name])) {
+			self::$instances[$name] = new self(self::$configs[$name]);
+		}
+		return self::$instances[$name];
+	}
+
+	public function begin(): void
+	{
+		if (!$this->pdo->beginTransaction()) {
 			throw new Exception('PDO cannot begin transaction.');
 		}
 	}
 
-	public static function commit(): void
+	public function commit(): void
 	{
-		self::construct();
-		if (!self::$pdo->commit()) {
+		if (!$this->pdo->commit()) {
 			throw new Exception('PDO cannot commit transaction.');
 		}
 	}
 
-	public static function roll_back(): void
+	public function roll_back(): void
 	{
-		self::construct();
-		if (!self::$pdo->rollBack()) {
+		if (!$this->pdo->rollBack()) {
 			throw new Exception('PDO cannot roll back.');
 		}
 	}
@@ -103,12 +93,11 @@ class Database
 	 * @return PDOStatement
 	 * @throws Exception
 	 */
-	public static function prepare_bind_execute(string $sql, array $data = [], array $data_types = []): PDOStatement
+	public function prepare_bind_execute(string $sql, array $data = [], array $data_types = []): PDOStatement
 	{
-		self::construct();
-		$sth = self::$pdo->prepare($sql);
+		$sth = $this->pdo->prepare($sql);
 		if (!$sth) {
-			$error_info = self::$pdo->errorInfo();
+			$error_info = $this->pdo->errorInfo();
 			throw new Exception("SQLSTATE: {$error_info[0]}, error code: {$error_info[1]}, error string: {$error_info[2]}");
 		}
 		if ($data) {
@@ -144,24 +133,10 @@ class Database
 		return $sth;
 	}
 
-	public static function shutdown_function(): void
+	public function shutdown_function(): void
 	{
-		$pdo = self::$pdo;
-		if ($pdo && $pdo->inTransaction()) {
-			self::roll_back();
+		if ($this->pdo->inTransaction()) {
+			$this->roll_back();
 		}
-	}
-
-	protected static function connect(): void
-	{
-		$dsn = 'mysql:';
-		$host = self::$host;
-		$unix_socket = self::$unix_socket;
-		if ($host) {
-			$dsn .= "host=$host";
-		} else if ($unix_socket) {
-			$dsn .= "unix_socket=$unix_socket";
-		}
-		self::$pdo = new PDO("$dsn;dbname=" . self::$name, self::$user, self::$password, self::$options);
 	}
 }

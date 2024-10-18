@@ -64,25 +64,28 @@ class Database
 		return self::$instances[$name];
 	}
 
-	public function begin(): void
+	public function begin(): bool
 	{
 		if (!$this->pdo->beginTransaction()) {
 			throw new Exception('PDO cannot begin transaction.');
 		}
+		return true;
 	}
 
-	public function commit(): void
+	public function commit(): bool
 	{
 		if (!$this->pdo->commit()) {
 			throw new Exception('PDO cannot commit transaction.');
 		}
+		return true;
 	}
 
-	public function roll_back(): void
+	public function roll_back(): bool
 	{
 		if (!$this->pdo->rollBack()) {
 			throw new Exception('PDO cannot roll back.');
 		}
+		return true;
 	}
 
 	/**

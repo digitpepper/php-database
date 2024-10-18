@@ -45,7 +45,6 @@ class Database
 			$options = array_replace($options, $config['options']);
 		}
 		$this->pdo = new PDO($config['dsn'], $config['username'], $config['password'], $options);
-		\register_shutdown_function([$this, 'shutdown_function']);
 	}
 
 	/**
@@ -131,12 +130,5 @@ class Database
 			throw new Exception('SQL statement cannot be executed.');
 		}
 		return $sth;
-	}
-
-	public function shutdown_function(): void
-	{
-		if ($this->pdo->inTransaction()) {
-			$this->roll_back();
-		}
 	}
 }
